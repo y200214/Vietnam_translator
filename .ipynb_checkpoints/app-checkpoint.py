@@ -1,15 +1,17 @@
 import os
 import time
 import threading
-from flask import Flask, request, render_template, send_file, jsonify, Response
+from flask import Flask, request, render_template, send_file, Response, redirect, url_for
 from docx import Document
 import requests
+import zipfile
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 # フォルダ設定
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'outputs'
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -30,10 +32,11 @@ LANGUAGE_CODES = {
     "アラビア語": "ar",
 }
 
+# Microsoft Translator APIキー
 TRANSLATOR_API_KEY = "1r2WZwFSKT5F2Qbvk40JSqVElgs8TP17pTMwfkWsNtS26KgkNPs0JQQJ99BAACi0881XJ3w3AAAbACOGHRrZ"
 TRANSLATOR_REGION = "japaneast"
 
-# グローバル変数で進捗を管理
+# 進捗管理
 progress = {"current": 0, "total": 0, "paused": False}
 
 
@@ -41,6 +44,7 @@ def translate_word_file(input_file, output_file, source_language, target_languag
     """Wordファイルの翻訳処理"""
     doc = Document(input_file)
 
+    # 段落と表内のテキストを収集
     paragraphs = [{"index": idx, "text": p.text.strip()} for idx, p in enumerate(doc.paragraphs) if p.text.strip()]
     table_texts = []
     table_cells = []
@@ -51,13 +55,13 @@ def translate_word_file(input_file, output_file, source_language, target_languag
                     table_texts.append(cell.text.strip())
                     table_cells.append(cell)
 
+    # 翻訳処理
     all_texts = [p["text"] for p in paragraphs] + table_texts
     translated_texts = translate_texts_with_retry(all_texts, source_language, target_language)
 
+    # 翻訳結果を反映
     for p in paragraphs:
-        p_idx = p["index"]
-        doc.paragraphs[p_idx].text = translated_texts.pop(0)
-
+        doc.paragraphs[p["index"]].text = translated_texts.pop(0)
     for cell in table_cells:
         cell.text = translated_texts.pop(0)
 
@@ -71,12 +75,11 @@ def translate_texts_with_retry(texts, source_language, target_language, max_retr
         batch = texts[i:i + batch_size]
         for attempt in range(max_retries):
             try:
-                result = translate_texts(batch, source_language, target_language)
-                translated_texts.extend(result)
+                translated_texts.extend(translate_texts(batch, source_language, target_language))
                 break
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 429:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2 ** attempt)  # リトライ時の待機時間
                 else:
                     raise e
         else:
@@ -97,64 +100,80 @@ def translate_texts(texts, source_language, target_language):
 
     response = requests.post(endpoint, headers=headers, params=params, json=body)
     response.raise_for_status()
-    return [t['translations'][0]['text'] for t in response.json()]
+    return [t["translations"][0]["text"] for t in response.json()]
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def index():
     global progress
-    if request.method == 'POST':
-        source_language = request.form.get('source_language')
-        target_language = request.form.get('target_language')
-        uploaded_files = request.files.getlist('files')
+    if request.method == "POST":
+        source_language = request.form.get("source_language")
+        target_language = request.form.get("target_language")
+        uploaded_files = request.files.getlist("files")
 
         if not source_language or not target_language or not uploaded_files:
-            return render_template('index.html', languages=LANGUAGE_CODES.keys(), error="入力項目を確認してください。")
+            return render_template("index.html", languages=LANGUAGE_CODES.keys(), error="入力項目を確認してください。")
 
         progress["current"] = 0
         progress["total"] = len(uploaded_files)
+        progress["paused"] = False
         results = []
 
         def process_files():
-            global progress
             for file in uploaded_files:
-                input_path = os.path.join(UPLOAD_FOLDER, file.filename)
+                input_path = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
                 output_path = os.path.join(OUTPUT_FOLDER, f"translated_{file.filename}")
                 file.save(input_path)
                 try:
                     translate_word_file(input_path, output_path, LANGUAGE_CODES[source_language], LANGUAGE_CODES[target_language])
                     results.append(os.path.basename(output_path))
-                except Exception as e:
-                    progress["current"] += 1
+                except Exception:
                     continue
                 progress["current"] += 1
 
         threading.Thread(target=process_files).start()
-        return render_template('index.html', languages=LANGUAGE_CODES.keys(), files=results, message="翻訳が進行中です。")
+        return render_template("index.html", languages=LANGUAGE_CODES.keys(), files=results, message="翻訳が進行中です。")
 
-    return render_template('index.html', languages=LANGUAGE_CODES.keys())
+    return render_template("index.html", languages=LANGUAGE_CODES.keys())
 
 
-@app.route('/progress')
+@app.route("/progress")
 def get_progress():
     """進捗状況をクライアントに送信"""
     def generate():
-        while True:
+        while progress["current"] < progress["total"]:
             yield f"data:{progress['current']}/{progress['total']}\n\n"
-            time.sleep(1)
-            if progress["current"] >= progress["total"]:
-                break
+            time.sleep(0.5)
+        yield "data:complete\n\n"
     return Response(generate(), content_type="text/event-stream")
 
 
-@app.route('/download/<path:filename>')
-def download_file(filename):
-    """翻訳されたファイルをダウンロード"""
-    file_path = os.path.join(OUTPUT_FOLDER, filename)
-    if not os.path.exists(file_path):
-        return "File not found", 404
-    return send_file(file_path, as_attachment=True)
+@app.route("/pause", methods=["POST"])
+def pause_translation():
+    """翻訳処理を一時停止"""
+    global progress
+    progress["paused"] = True
+    return "Paused"
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+@app.route("/resume", methods=["POST"])
+def resume_translation():
+    """翻訳処理を再開"""
+    global progress
+    progress["paused"] = False
+    return "Resumed"
+
+
+@app.route("/download_zip")
+def download_zip():
+    """翻訳されたファイルをZIP形式でダウンロード"""
+    zip_path = os.path.join(OUTPUT_FOLDER, "translations.zip")
+    with zipfile.ZipFile(zip_path, "w") as zipf:
+        for file_name in os.listdir(OUTPUT_FOLDER):
+            file_path = os.path.join(OUTPUT_FOLDER, file_name)
+            zipf.write(file_path, os.path.basename(file_path))
+    return send_file(zip_path, as_attachment=True)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

@@ -3,145 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>翻訳アプリケーション</title>
+    <title>File Translator</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
+            background-color: #f9f9f9;
+            color: #333;
+            text-align: center;
+            padding: 20px;
         }
         h1 {
-            text-align: center;
-            color: #333;
+            color: #4CAF50;
         }
-        .message {
-            margin: 10px 0;
-            color: green;
+        .progress-container {
+            margin: 20px auto;
+            width: 80%;
         }
-        .error {
-            margin: 10px 0;
-            color: red;
+        progress {
+            width: 100%;
+            height: 30px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            overflow: hidden;
         }
-        #progress {
-            margin-top: 20px;
-            font-size: 1.2em;
-            color: #333;
+        progress::-webkit-progress-bar {
+            background-color: #f3f3f3;
         }
-        .buttons {
-            margin-top: 20px;
-            display: flex;
-            justify-content: space-between;
+        progress::-webkit-progress-value {
+            background-color: #4CAF50;
         }
         .file-list {
-            margin-top: 20px;
-        }
-        .file-list li {
-            list-style: none;
-            margin: 5px 0;
+            text-align: left;
+            max-width: 600px;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #fff;
         }
         button {
-            padding: 10px 20px;
-            font-size: 1em;
-            color: #fff;
-            background-color: #007BFF;
+            background-color: #4CAF50;
+            color: white;
             border: none;
             border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
             cursor: pointer;
+            margin: 10px;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: #45a049;
         }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
+        .error, .message {
+            color: #d9534f;
+            margin-top: 20px;
+        }
+        a {
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a:hover {
+            text-decoration: underline;
         }
     </style>
     <script>
         let eventSource;
 
-        function startTask() {
-            document.getElementById("progress").innerText = "翻訳を開始しました...";
-            fetch("/start", { method: "POST" });
+        function startProgress() {
             if (!eventSource) {
                 eventSource = new EventSource("/progress");
                 eventSource.onmessage = function (event) {
                     const progressText = event.data;
                     if (progressText === "complete") {
-                        document.getElementById("progress").innerText = "翻訳が完了しました！";
+                        document.getElementById("progress-bar").value = 100;
+                        document.getElementById("status").innerText = "Translation Complete!";
                         eventSource.close();
                         eventSource = null;
                     } else {
-                        document.getElementById("progress").innerText = `進捗: ${progressText}`;
+                        const [current, total] = progressText.split("/");
+                        const percentage = (current / total) * 100;
+                        document.getElementById("progress-bar").value = percentage;
+                        document.getElementById("status").innerText = `Progress: ${current}/${total}`;
                     }
                 };
             }
         }
 
-        function pauseTask() {
+        function pauseTranslation() {
             fetch("/pause", { method: "POST" });
-            document.getElementById("progress").innerText = "一時停止中...";
         }
 
-        function resumeTask() {
+        function resumeTranslation() {
             fetch("/resume", { method: "POST" });
-            document.getElementById("progress").innerText = "再開中...";
         }
     </script>
 </head>
-<body>
-    <div class="container">
-        <h1>翻訳アプリケーション</h1>
+<body onload="startProgress()">
+    <h1>File Translator</h1>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+        <label for="files">Upload Files:</label>
+        <input type="file" name="files" id="files" multiple>
+        <br><br>
+        <button type="submit">Start Translation</button>
+    </form>
 
-        <form method="POST" action="/" enctype="multipart/form-data">
-            <label for="source_language">翻訳元の言語:</label>
-            <select name="source_language" id="source_language" required>
-                {% for language in languages %}
-                <option value="{{ language }}">{{ language }}</option>
-                {% endfor %}
-            </select>
+    <div class="progress-container">
+        <progress id="progress-bar" value="0" max="100"></progress>
+        <p id="status">Progress: 0/0</p>
+    </div>
 
-            <label for="target_language">翻訳先の言語:</label>
-            <select name="target_language" id="target_language" required>
-                {% for language in languages %}
-                <option value="{{ language }}">{{ language }}</option>
-                {% endfor %}
-            </select>
+    <div>
+        <button onclick="pauseTranslation()">Pause</button>
+        <button onclick="resumeTranslation()">Resume</button>
+    </div>
 
-            <label for="files">ファイルを選択:</label>
-            <input type="file" name="files" id="files" multiple required>
+    <div class="message">
+        <a href="/download_zip">Download All Translated Files (ZIP)</a>
+    </div>
 
-            <button type="submit">アップロード</button>
-        </form>
-
-        {% if message %}
-        <p class="message">{{ message }}</p>
-        {% endif %}
-
-        {% if error %}
-        <p class="error">{{ error }}</p>
-        {% endif %}
-
-        <div id="progress">進捗: 0/0</div>
-
-        <div class="buttons">
-            <button onclick="startTask()">開始</button>
-            <button onclick="pauseTask()">一時停止</button>
-            <button onclick="resumeTask()">再開</button>
-        </div>
-
-        {% if files %}
-        <div class="file-list">
-            <h3>翻訳されたファイル:</h3>
-            <ul>
-                {% for file in files %}
-                <li><a href="/download/{{ file }}">{{ file }}</a></li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
+    <div class="file-list" id="file-list">
+        <h3>Translated Files:</h3>
+        <!-- Completed file names will be appended here -->
     </div>
 </body>
 </html>
