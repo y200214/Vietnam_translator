@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>翻訳ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #4CAF50; }
+        form { margin-top: 20px; }
+        label { display: block; margin-top: 10px; }
+        button { margin-top: 15px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        .progress { margin-top: 20px; font-weight: bold; color: blue; }
+        .error { color: red; margin-top: 10px; }
+        .success { color: green; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>翻訳ツール</h1>
+
+    <form action="/" method="POST" enctype="multipart/form-data">
+        <label>翻訳元言語:
+            <select name="source_language">
+                {% for lang in languages %}
+                    <option>{{ lang }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>翻訳先言語:
+            <select name="target_language">
+                {% for lang in languages %}
+                    <option>{{ lang }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>複数のファイルを選択:</label>
+        <input type="file" name="files" multiple required>
+        <button type="submit">翻訳開始</button>
+    </form>
+
+    <!-- エラーメッセージ -->
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <!-- 成功メッセージ -->
+    {% if message %}
+        <p class="success">{{ message }}</p>
+    {% endif %}
+
+    <!-- 翻訳済みファイルのリスト -->
+    {% if files %}
+        <h2>翻訳されたファイル:</h2>
+        <ul>
+            {% for file in files %}
+                <li><a href="/download/{{ file }}">{{ file }}</a></li>
+            {% endfor %}
+        </ul>
+               
+    {% endif %}
+
+    <!-- 進捗状況表示 -->
+    <div class="progress" id="progress">進捗状況: 未開始</div>
+
+    <script>
+        // サーバーから進捗状況を取得して表示
+        const eventSource = new EventSource('/progress');
+        eventSource.onmessage = function(event) {
+            document.getElementById('progress').textContent = "進捗状況: " + event.data;
+        };
+    </script>
+</body>
+</html>
