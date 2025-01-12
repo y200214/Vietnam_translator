@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Progress Bar Example</title>
+    <title>翻訳アプリ</title>
     <script>
         function startProgress() {
             const progressBar = document.getElementById("progress-bar");
@@ -11,20 +11,24 @@
             const eventSource = new EventSource("/progress");
 
             eventSource.onmessage = function(event) {
-                const [current, total] = event.data.split("/");
                 if (event.data === "complete") {
                     progressBar.style.width = "100%";
                     progressText.textContent = "完了！";
                     eventSource.close();
                 } else {
+                    const [current, total] = event.data.split("/");
                     const percentage = (current / total) * 100;
                     progressBar.style.width = percentage + "%";
-                    progressText.textContent = `${current}/${total}`;
+                    progressText.textContent = `進行中: ${current}/${total}`;
                 }
             };
         }
     </script>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
         .progress-container {
             width: 100%;
             background-color: #f3f3f3;
@@ -32,29 +36,46 @@
             overflow: hidden;
             margin: 20px 0;
         }
-
         .progress-bar {
             height: 20px;
             background-color: #4caf50;
             width: 0;
             transition: width 0.2s ease;
         }
+        .form-group {
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body onload="startProgress()">
-    <h1>翻訳進行状況</h1>
-    <form method="post" enctype="multipart/form-data">
-        <label for="source_language">翻訳元の言語:</label>
-        <select name="source_language" id="source_language">
-            <option value="ja">日本語</option>
-            <option value="en">英語</option>
-        </select>
-        <br>
-        <label for="target_language">翻訳先の言語:</label>
-        <select name="target_language" id="target_language">
-            <option value="ja">日本語</option>
-            <option value="en">英語</option>
-        </select>
-        <br>
-        <label for="files">ファイルを選択:</label>
-        <input type="file" name="file
+    <h1>ファイル翻訳アプリ</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="source_language">翻訳元の言語:</label>
+            <select name="source_language" id="source_language" required>
+                <option value="" disabled selected>選択してください</option>
+                <option value="ja">日本語</option>
+                <option value="en">英語</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="target_language">翻訳先の言語:</label>
+            <select name="target_language" id="target_language" required>
+                <option value="" disabled selected>選択してください</option>
+                <option value="ja">日本語</option>
+                <option value="en">英語</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="files">翻訳するファイルを選択:</label>
+            <input type="file" name="files" id="files" multiple required>
+        </div>
+        <button type="submit">翻訳開始</button>
+    </form>
+
+    <div class="progress-container">
+        <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="progress-text">進行中: 0/0</div>
+</body>
+</html>
