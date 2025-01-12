@@ -1,129 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Translator</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>翻訳アプリ</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            text-align: center;
             margin: 20px;
+            text-align: center;
         }
-        .progress-container {
-            margin: 20px auto;
-            width: 60%;
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
         }
         progress {
             width: 100%;
             height: 20px;
         }
-        .status {
-            margin-top: 10px;
-            font-size: 1.2em;
-        }
-        .control-buttons {
-            margin: 10px 0;
-        }
         button {
             margin: 5px;
             padding: 10px 20px;
-            font-size: 1em;
-            cursor: pointer;
+            font-size: 16px;
         }
     </style>
     <script>
-        let eventSource;
-
         function startProgress() {
-            // サーバーから進捗データを受け取る
-            eventSource = new EventSource("/progress");
-            eventSource.onmessage = function (event) {
-                const progressText = event.data;
-
-                // 完了した場合
-                if (progressText === "complete") {
-                    document.getElementById("progress-bar").value = 100;
-                    document.getElementById("status").innerText = "✅ Translation Complete!";
+            const eventSource = new EventSource("/progress");
+            eventSource.onmessage = function(event) {
+                const data = event.data;
+                if (data === "complete") {
+                    document.getElementById("progress").value = 100;
+                    document.getElementById("status").innerText = "✅ 翻訳が完了しました！";
                     eventSource.close();
                 } else {
-                    // 進捗バーを更新
-                    const [current, total] = progressText.split("/");
+                    const [current, total] = data.split("/");
                     const percentage = (current / total) * 100;
-                    document.getElementById("progress-bar").value = percentage;
-                    document.getElementById("status").innerText = `Progress: ${current}/${total}`;
+                    document.getElementById("progress").value = percentage;
+                    document.getElementById("status").innerText = `進捗: ${current}/${total}`;
                 }
             };
-
-            eventSource.onerror = function () {
-                console.error("Error occurred in progress stream.");
-                document.getElementById("status").innerText = "❌ An error occurred.";
-                eventSource.close();
-            };
         }
 
-        function pauseProgress() {
-            fetch("/pause", { method: "POST" })
-                .then(() => {
-                    document.getElementById("pause-btn").style.display = "none";
-                    document.getElementById("resume-btn").style.display = "inline-block";
-                })
-                .catch(console.error);
+        function sendPause() {
+            fetch("/pause", { method: "POST" });
+            document.getElementById("status").innerText = "⏸️ 一時停止中...";
         }
 
-        function resumeProgress() {
-            fetch("/resume", { method: "POST" })
-                .then(() => {
-                    document.getElementById("resume-btn").style.display = "none";
-                    document.getElementById("pause-btn").style.display = "inline-block";
-                })
-                .catch(console.error);
+        function sendResume() {
+            fetch("/resume", { method: "POST" });
+            document.getElementById("status").innerText = "▶️ 再開しました！";
         }
     </script>
 </head>
 <body onload="startProgress()">
-    <h1>🌟 File Translator 🌟</h1>
-    <form action="/" method="POST" enctype="multipart/form-data">
-        <label for="source_language">Source Language:</label>
-        <select id="source_language" name="source_language">
-            {% for lang in languages %}
-            <option value="{{ lang }}">{{ lang }}</option>
-            {% endfor %}
-        </select>
-
-        <label for="target_language">Target Language:</label>
-        <select id="target_language" name="target_language">
-            {% for lang in languages %}
-            <option value="{{ lang }}">{{ lang }}</option>
-            {% endfor %}
-        </select>
-
-        <input type="file" name="files" multiple required>
-        <button type="submit">Start Translation</button>
-    </form>
-
-    <div class="progress-container">
-        <progress id="progress-bar" value="0" max="100"></progress>
-        <p class="status" id="status">Progress: 0/0</p>
+    <div class="container">
+        <h1>翻訳アプリ</h1>
+        <form action="/" method="POST" enctype="multipart/form-data">
+            <label for="source_language">翻訳元の言語:</label>
+            <select id="source_language" name="source_language" required>
+                {% for lang in languages %}
+                <option value="{{ lang }}">{{ lang }}</option>
+                {% endfor %}
+            </select>
+            <br><br>
+            <label for="target_language">翻訳先の言語:</label>
+            <select id="target_language" name="target_language" required>
+                {% for lang in languages %}
+                <option value="{{ lang }}">{{ lang }}</option>
+                {% endfor %}
+            </select>
+            <br><br>
+            <label for="files">ファイルを選択:</label>
+            <input type="file" id="files" name="files" multiple required>
+            <br><br>
+            <button type="submit">翻訳開始</button>
+        </form>
+        <br>
+        <progress id="progress" value="0" max="100"></progress>
+        <p id="status">進捗: 0/0</p>
+        <button onclick="sendPause()">⏸️ 一時停止</button>
+        <button onclick="sendResume()">▶️ 再開</button>
     </div>
-
-    <div class="control-buttons">
-        <button id="pause-btn" onclick="pauseProgress()">Pause</button>
-        <button id="resume-btn" onclick="resumeProgress()" style="display: none;">Resume</button>
-    </div>
-
-    {% if files %}
-    <h2>Translated Files</h2>
-    <ul>
-        {% for file in files %}
-        <li><a href="/download/{{ file }}">{{ file }}</a></li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-
-    {% if error %}
-    <p style="color: red;">{{ error }}</p>
-    {% endif %}
 </body>
 </html>
