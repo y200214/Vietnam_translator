@@ -102,7 +102,6 @@ def translate_texts(texts, source_language, target_language):
     response.raise_for_status()
     return [t["translations"][0]["text"] for t in response.json()]
 
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     global progress
@@ -114,37 +113,62 @@ def index():
         if not source_language or not target_language or not uploaded_files:
             return render_template("index.html", languages=LANGUAGE_CODES.keys(), error="入力項目を確認してください。")
 
+        # 初期化
         progress["current"] = 0
         progress["total"] = len(uploaded_files)
         progress["paused"] = False
         results = []
 
         def process_files():
+            """ファイルを非同期で翻訳処理"""
             for file in uploaded_files:
+                # ファイルの保存先
                 input_path = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
                 output_path = os.path.join(OUTPUT_FOLDER, f"translated_{file.filename}")
+
+                # ファイルを保存
                 file.save(input_path)
+
+                # 一時停止状態を確認
+                while progress["paused"]:
+                    time.sleep(0.5)  # 一時停止中はスリープ
+
                 try:
-                    translate_word_file(input_path, output_path, LANGUAGE_CODES[source_language], LANGUAGE_CODES[target_language])
+                    # 翻訳処理
+                    translate_word_file(
+                        input_path, output_path, 
+                        LANGUAGE_CODES[source_language], 
+                        LANGUAGE_CODES[target_language]
+                    )
                     results.append(os.path.basename(output_path))
-                except Exception:
+                except Exception as e:
+                    print(f"Error translating {file.filename}: {e}")
                     continue
+
+                # 進捗更新
                 progress["current"] += 1
 
+        # スレッドで非同期実行
         threading.Thread(target=process_files).start()
-        return render_template("index.html", languages=LANGUAGE_CODES.keys(), files=results, message="翻訳が進行中です。")
+        return render_template(
+            "index.html", 
+            languages=LANGUAGE_CODES.keys(), 
+            files=results, 
+            message="翻訳が進行中です。"
+        )
 
     return render_template("index.html", languages=LANGUAGE_CODES.keys())
 
 
+
 @app.route("/progress")
-def get_progress():
+def progress_status():
     """進捗状況をクライアントに送信"""
     def generate():
         while progress["current"] < progress["total"]:
             yield f"data:{progress['current']}/{progress['total']}\n\n"
-            time.sleep(0.5)
-        yield "data:complete\n\n"
+            time.sleep(0.5)  # 定期的に進捗を送信
+        yield "data:complete\n\n"  # 完了通知
     return Response(generate(), content_type="text/event-stream")
 
 
